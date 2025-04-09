@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Dodge & Fire</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #222;
+      color: #fff;
+      font-family: Arial, sans-serif;
+      overflow: hidden;
+    }
+    /* Container holds the canvas */
+    #gameContainer {
+      background-color: #333;
+    }
+    /* Canvas responsive */
+    #gameCanvas {
+      height: 100vh;
+      max-width: 90vh;
+      background-color: #333;
+      display: block;
+      margin: 0 auto;
+      border: 2px solid #fff;
+    }
+    .screen {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.9);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      flex-direction: column;
+      z-index: 2;
+    }
+    .hidden {
+      display: none;
+    }
+    button {
+      padding: 10px 20px;
+      margin: 10px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+    #howToPlayText {
+      max-width: 80%;
+      text-align: center;
+      margin-bottom: 20px;
+    }
+  </style>
+</head>
+<body>
+  <!-- Menu Screen -->
+  <div id="menuScreen" class="screen">
+    <h1>Dodge & Fire</h1>
+    <button id="startBtn">Start Game</button>
+    <button id="howToPlayBtn">How to Play</button>
+  </div>
+  
+  <!-- How To Play Screen -->
+  <div id="howToPlayScreen" class="screen hidden">
+    <div id="howToPlayText">
+      <p>Desktop: Use LEFT & RIGHT arrow keys to move and SPACE to fire.</p>
+      <p>Mobile: Hold your finger on the left/right half of the screen to move. For fire, simply tap (quick touch) anywhere on the screen.</p>
+      <p>Enemies fall from the top. Shoot them or avoid them. Score increases over time and enemy speed increases gradually (up to a limit).<br>
+      Also, if you miss 10 enemies (they fall down without being hit), it's game over!</p>
+    </div>
+    <button id="backBtn">Back</button>
+  </div>
+  
+  <!-- Game Over Screen -->
+  <div id="gameOverScreen" class="screen hidden">
+    <h1>Game Over</h1>
+    <p id="finalScore">Score: 0</p>
+    <button id="restartBtn">Restart</button>
+    <button id="backMenuBtn">Home</button>
+  </div>
+  
+  <!-- Game Container -->
+  <div id="gameContainer">
+    <canvas id="gameCanvas"></canvas>
+  </div>
+  
+  <script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+
+    // Responsive canvas: full window height and width
+    function resizeCanvas() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+
+    // UI Screens
+    const menuScreen = document.getElementById("menuScreen");
+    const howToPlayScreen = document.getElementById("howToPlayScreen");
+    const gameOverScreen = document.getElementById("gameOverScreen");
+    const finalScoreText = document.getElementById("finalScore");
+
+    // UI Buttons
+    const startBtn = document.getElementById("startBtn");
+    const howToPlayBtn = document.getElementById("howToPlayBtn");
+    const backBtn = document.getElementById("backBtn");
+    const restartBtn = document.getElementById("restartBtn");
+    const backMenuBtn = document.getElementById("backMenuBtn");
+
+    // Game Variables
+    let gameState = "menu"; // menu, playing, gameover
+    let player, enemies, bullets, score;
+    let enemySpawnInterval;
+    let lastTime = 0;
+    // Modified enemy speed variables:
+    let enemySpeedIncrement = 0.001; // slower increment
+    const maxEnemySpeed = 2.3;          // lower maximum speed
+    const maxMissedAllowed = 10;      // 10 missed enemies => game over
+    let missedCount = 0;              // counter for missed enemies
+
+    // Player settings
+    const playerWidth = 40;
+    const playerHeight = 20;
+    const playerSpeed = 5;
+    
+    // Enemy settings
+    const enemyWidth = 30;
+    const enemyHeight = 30;
+    let baseEnemySpeed = 0.5;  // start with lower speed
+
+    // Bullet settings
+    const bulletWidth = 4;
+    const bulletHeight = 10;
+    const bulletSpeed = 7;
+    
+    // Controls: Desktop keyboard keys
+    const keys = {};
+    document.addEventListener("keydown", (e) => {
+      keys[e.key] = true;
+      if (gameState === "playing" && e.key === " ") {
+        fireBullet();
+      }
+    });
+    document.addEventListener("keyup", (e) => {
+      keys[e.key] = false;
+    });
+
+    // Touch controls variables for mobile
+    let touchStartTime = 0;
+    let touchStartX = 0;
+    let touchDirection = null; // "left" or "right"
+
+    // Mobile: canvas touch events
+    canvas.addEventListener("touchstart", (e) => {
+      if(gameState !== "playing") return;
+      const touch = e.touches[0];
+      touchStartTime = new Date().getTime();
+      touchStartX = touch.clientX;
+      if (touch.clientX < canvas.width / 2) {
+        touchDirection = "left";
+      } else {
+        touchDirection = "right";
+      }
+    });
+
+    canvas.addEventListener("touchmove", (e) => {
+      if(gameState !== "playing") return;
+      const touch = e.touches[0];
+      if (touch.clientX < canvas.width / 2) {
+        touchDirection = "left";
+      } else {
+        touchDirection = "right";
+      }
+    });
+
+    canvas.addEventListener("touchend", (e) => {
+      if(gameState !== "playing") return;
+      const touchEndTime = new Date().getTime();
+      const touchDuration = touchEndTime - touchStartTime;
+      if(touchDuration < 200) {
+        fireBullet();
+      }
+      touchDirection = null;
+    });
+    
+    // Mouse click as fire on desktop
+    canvas.addEventListener("click", () => {
+      if(gameState === "playing") {
+        fireBullet();
+      }
+    });
+    
+    // UI Button event listeners
+    startBtn.addEventListener("click", startGame);
+    howToPlayBtn.addEventListener("click", () => {
+      menuScreen.classList.add("hidden");
+      howToPlayScreen.classList.remove("hidden");
+    });
+    backBtn.addEventListener("click", () => {
+      howToPlayScreen.classList.add("hidden");
+      menuScreen.classList.remove("hidden");
+    });
+    restartBtn.addEventListener("click", () => {
+      // Reset any persistent key states and missed count
+      for (let k in keys) { keys[k] = false; }
+      startGame();
+    });
+    backMenuBtn.addEventListener("click", () => {
+      gameOverScreen.classList.add("hidden");
+      menuScreen.classList.remove("hidden");
+    });
+    
+    // Initialize game objects
+    function initGame() {
+      player = {
+        x: canvas.width / 2 - playerWidth / 2,
+        y: canvas.height - playerHeight - 10,
+        width: playerWidth,
+        height: playerHeight,
+      };
+      enemies = [];
+      bullets = [];
+      score = 0;
+      baseEnemySpeed = 0.5;
+      missedCount = 0;
+      lastTime = performance.now();
+    }
+    
+    function startGame() {
+      gameState = "playing";
+      menuScreen.classList.add("hidden");
+      gameOverScreen.classList.add("hidden");
+      initGame();
+      enemySpawnInterval = setInterval(spawnEnemy, 1000);
+      requestAnimationFrame(gameLoop);
+    }
+    
+    function gameLoop(timestamp) {
+      if(gameState !== "playing") return;
+      const deltaTime = timestamp - lastTime;
+      lastTime = timestamp;
+      
+      update(deltaTime);
+      draw();
+      requestAnimationFrame(gameLoop);
+    }
+    
+    function update(deltaTime) {
+      score += deltaTime * 0.01;
+      
+      // Desktop movement
+      if(keys["ArrowLeft"] && player.x > 0) {
+        player.x -= playerSpeed;
+      }
+      if(keys["ArrowRight"] && player.x < canvas.width - player.width) {
+        player.x += playerSpeed;
+      }
+      
+      // Mobile movement
+      if(touchDirection === "left" && player.x > 0) {
+        player.x -= playerSpeed;
+      }
+      if(touchDirection === "right" && player.x < canvas.width - player.width) {
+        player.x += playerSpeed;
+      }
+      
+      // Update bullets
+      bullets = bullets.filter(bullet => {
+        bullet.y -= bulletSpeed;
+        return bullet.y + bullet.height > 0;
+      });
+      
+      // Update enemies and count misses
+      enemies = enemies.filter(enemy => {
+        enemy.y += enemy.speed;
+        if(enemy.y > canvas.height) {
+          missedCount++;
+          return false;
+        }
+        return true;
+      });
+      
+      // Gradually increase enemy speed (up to max)
+      if(baseEnemySpeed < maxEnemySpeed) {
+        baseEnemySpeed += enemySpeedIncrement;
+      }
+      
+      // If missed enemies >= allowed limit then game over
+      if(missedCount >= maxMissedAllowed) {
+        endGame();
+        return;
+      }
+      
+      // Collision detection: Bullets vs. Enemies
+      bullets.forEach((bullet, bi) => {
+        enemies.forEach((enemy, ei) => {
+          if(rectIntersect(bullet, enemy)) {
+            enemies.splice(ei, 1);
+            bullets.splice(bi, 1);
+          }
+        });
+      });
+      
+      // Collision detection: Enemy vs. Player
+      for(let enemy of enemies) {
+        if(rectIntersect(enemy, player)) {
+          endGame();
+          return;
+        }
+      }
+    }
+    
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      
+      // Draw player
+      ctx.fillStyle = "#0f0";
+      ctx.fillRect(player.x, player.y, player.width, player.height);
+      
+      // Draw bullets
+      ctx.fillStyle = "#ff0";
+      bullets.forEach(bullet => {
+        ctx.fillRect(bullet.x, bullet.y, bullet.width, bullet.height);
+      });
+      
+      // Draw enemies
+      ctx.fillStyle = "#f00";
+      enemies.forEach(enemy => {
+        ctx.fillRect(enemy.x, enemy.y, enemy.width, enemy.height);
+      });
+      
+      // Draw Score
+      ctx.fillStyle = "#fff";
+      ctx.font = "20px Arial";
+      ctx.fillText("Score: " + Math.floor(score), 10, 25);
+      // Optionally show missed count (for debugging)
+      ctx.fillText("Missed: " + missedCount, 10, 50);
+    }
+    
+    function spawnEnemy() {
+      const x = Math.random() * (canvas.width - enemyWidth);
+      enemies.push({
+        x: x,
+        y: -enemyHeight,
+        width: enemyWidth,
+        height: enemyHeight,
+        speed: baseEnemySpeed
+      });
+    }
+    
+    function fireBullet() {
+      bullets.push({
+        x: player.x + player.width / 2 - bulletWidth / 2,
+        y: player.y,
+        width: bulletWidth,
+        height: bulletHeight
+      });
+    }
+    
+    function rectIntersect(a, b) {
+      return a.x < b.x + b.width &&
+             a.x + a.width > b.x &&
+             a.y < b.y + b.height &&
+             a.y + a.height > b.y;
+    }
+    
+    function endGame() {
+      gameState = "gameover";
+      clearInterval(enemySpawnInterval);
+      finalScoreText.textContent = "Score: " + Math.floor(score);
+      gameOverScreen.classList.remove("hidden");
+    }
+  </script>
+</body>
+</html>
