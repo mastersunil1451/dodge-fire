@@ -2,6 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <!-- Mobile viewport meta tag for proper scaling -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Dodge & Fire</title>
   <style>
     body {
@@ -11,19 +13,19 @@
       color: #fff;
       font-family: Arial, sans-serif;
       overflow: hidden;
+      touch-action: none; /* Disable pinch zoom */
     }
     /* Container holds the canvas */
     #gameContainer {
       background-color: #333;
     }
-    /* Canvas responsive */
+    /* Responsive canvas */
     #gameCanvas {
+      width: 100vw;
       height: 100vh;
-      max-width: 90vh;
       background-color: #333;
       display: block;
       margin: 0 auto;
-      border: 2px solid #fff;
     }
     .screen {
       position: absolute;
@@ -42,22 +44,23 @@
       display: none;
     }
     button {
-      padding: 10px 20px;
-      margin: 10px;
-      font-size: 16px;
+      padding: 2vh 4vw;
+      margin: 1vh 1vw;
+      font-size: 4vw;
       cursor: pointer;
     }
     #howToPlayText {
       max-width: 80%;
       text-align: center;
       margin-bottom: 20px;
+      font-size: 4vw;
     }
   </style>
 </head>
 <body>
   <!-- Menu Screen -->
   <div id="menuScreen" class="screen">
-    <h1>Dodge & Fire</h1>
+    <h1 style="font-size: 6vw;">Dodge & Fire</h1>
     <button id="startBtn">Start Game</button>
     <button id="howToPlayBtn">How to Play</button>
   </div>
@@ -66,7 +69,7 @@
   <div id="howToPlayScreen" class="screen hidden">
     <div id="howToPlayText">
       <p>Desktop: Use LEFT & RIGHT arrow keys to move and SPACE to fire.</p>
-      <p>Mobile: Hold your finger on the left/right half of the screen to move. For fire, simply tap (quick touch) anywhere on the screen.</p>
+      <p>Mobile: Slide your finger horizontally to move. Tap (quick touch) with another finger to fire.</p>
       <p>Enemies fall from the top. Shoot them or avoid them. Score increases over time and enemy speed increases gradually (up to a limit).<br>
       Also, if you miss 10 enemies (they fall down without being hit), it's game over!</p>
     </div>
@@ -75,8 +78,8 @@
   
   <!-- Game Over Screen -->
   <div id="gameOverScreen" class="screen hidden">
-    <h1>Game Over</h1>
-    <p id="finalScore">Score: 0</p>
+    <h1 style="font-size: 6vw;">Game Over</h1>
+    <p id="finalScore" style="font-size: 5vw;">Score: 0</p>
     <button id="restartBtn">Restart</button>
     <button id="backMenuBtn">Home</button>
   </div>
@@ -90,7 +93,7 @@
     const canvas = document.getElementById("gameCanvas");
     const ctx = canvas.getContext("2d");
 
-    // Responsive canvas: full window height and width
+    // Responsive canvas: full window dimensions
     function resizeCanvas() {
       canvas.width = window.innerWidth;
       canvas.height = window.innerHeight;
@@ -116,11 +119,10 @@
     let player, enemies, bullets, score;
     let enemySpawnInterval;
     let lastTime = 0;
-    // Modified enemy speed variables:
     let enemySpeedIncrement = 0.001; // slower increment
-    const maxEnemySpeed = 2.3;          // lower maximum speed
-    const maxMissedAllowed = 10;      // 10 missed enemies => game over
-    let missedCount = 0;              // counter for missed enemies
+    const maxEnemySpeed = 2.3;         // lower maximum speed
+    const maxMissedAllowed = 10;       // 10 missed enemies => game over
+    let missedCount = 0;             // counter for missed enemies
 
     // Player settings
     const playerWidth = 40;
@@ -137,7 +139,7 @@
     const bulletHeight = 10;
     const bulletSpeed = 7;
     
-    // Controls: Desktop keyboard keys
+    // Controls: Desktop keyboard
     const keys = {};
     document.addEventListener("keydown", (e) => {
       keys[e.key] = true;
@@ -149,45 +151,81 @@
       keys[e.key] = false;
     });
 
-    // Touch controls variables for mobile
-    let touchStartTime = 0;
-    let touchStartX = 0;
-    let touchDirection = null; // "left" or "right"
+    // Multi-touch support for mobile:
+    // movementTouchId stores the touch id designated for moving the player.
+    let movementTouchId = null;
+    // touchData stores details for each touch (start time, startX, lastX, moved flag)
+    const touchData = {};
 
-    // Mobile: canvas touch events
     canvas.addEventListener("touchstart", (e) => {
       if(gameState !== "playing") return;
-      const touch = e.touches[0];
-      touchStartTime = new Date().getTime();
-      touchStartX = touch.clientX;
-      if (touch.clientX < canvas.width / 2) {
-        touchDirection = "left";
-      } else {
-        touchDirection = "right";
+      for (let touch of e.changedTouches) {
+        // Record initial touch data for each touch
+        touchData[touch.identifier] = {
+          startX: touch.clientX,
+          lastX: touch.clientX,
+          startTime: new Date().getTime(),
+          moved: false
+        };
+        // If no movement touch is set, designate the first touch as movement
+        if(movementTouchId === null) {
+          movementTouchId = touch.identifier;
+        }
       }
     });
 
     canvas.addEventListener("touchmove", (e) => {
       if(gameState !== "playing") return;
-      const touch = e.touches[0];
-      if (touch.clientX < canvas.width / 2) {
-        touchDirection = "left";
-      } else {
-        touchDirection = "right";
+      for (let touch of e.changedTouches) {
+        const data = touchData[touch.identifier];
+        if(!data) continue;
+        const deltaX = touch.clientX - data.lastX;
+        // Mark this touch as having moved if deltaX is significant
+        if(Math.abs(deltaX) > 2) {
+          data.moved = true;
+        }
+        data.lastX = touch.clientX;
+        // Only update player position for the designated movement touch
+        if(touch.identifier === movementTouchId) {
+          player.x += deltaX;
+          // Boundary checks
+          if(player.x < 0) player.x = 0;
+          if(player.x > canvas.width - player.width) player.x = canvas.width - player.width;
+        }
       }
     });
 
     canvas.addEventListener("touchend", (e) => {
       if(gameState !== "playing") return;
-      const touchEndTime = new Date().getTime();
-      const touchDuration = touchEndTime - touchStartTime;
-      if(touchDuration < 200) {
-        fireBullet();
+      for (let touch of e.changedTouches) {
+        const data = touchData[touch.identifier];
+        if(!data) continue;
+        const touchDuration = new Date().getTime() - data.startTime;
+        // If the touch wasn't used for movement (or minimal movement) and was short, fire bullet
+        if(!data.moved && touchDuration < 200) {
+          fireBullet();
+        }
+        // If the ended touch was the movement touch, assign a new one if available
+        if(touch.identifier === movementTouchId) {
+          movementTouchId = null;
+          // Try to assign any active touch as movement
+          const remainingTouches = Object.keys(touchData);
+          if(remainingTouches.length > 1) {
+            // Assign the first one that is not the one that just ended
+            for (let id of remainingTouches) {
+              if(parseInt(id) !== touch.identifier) {
+                movementTouchId = parseInt(id);
+                break;
+              }
+            }
+          }
+        }
+        // Remove the touch data of the ended touch
+        delete touchData[touch.identifier];
       }
-      touchDirection = null;
     });
     
-    // Mouse click as fire on desktop
+    // Mouse click for desktop firing
     canvas.addEventListener("click", () => {
       if(gameState === "playing") {
         fireBullet();
@@ -205,7 +243,7 @@
       menuScreen.classList.remove("hidden");
     });
     restartBtn.addEventListener("click", () => {
-      // Reset any persistent key states and missed count
+      // Reset persistent key states before restarting
       for (let k in keys) { keys[k] = false; }
       startGame();
     });
@@ -252,19 +290,11 @@
     function update(deltaTime) {
       score += deltaTime * 0.01;
       
-      // Desktop movement
+      // Desktop keyboard movement
       if(keys["ArrowLeft"] && player.x > 0) {
         player.x -= playerSpeed;
       }
       if(keys["ArrowRight"] && player.x < canvas.width - player.width) {
-        player.x += playerSpeed;
-      }
-      
-      // Mobile movement
-      if(touchDirection === "left" && player.x > 0) {
-        player.x -= playerSpeed;
-      }
-      if(touchDirection === "right" && player.x < canvas.width - player.width) {
         player.x += playerSpeed;
       }
       
@@ -274,7 +304,7 @@
         return bullet.y + bullet.height > 0;
       });
       
-      // Update enemies and count misses
+      // Update enemies; count misses if they pass the bottom
       enemies = enemies.filter(enemy => {
         enemy.y += enemy.speed;
         if(enemy.y > canvas.height) {
@@ -289,7 +319,7 @@
         baseEnemySpeed += enemySpeedIncrement;
       }
       
-      // If missed enemies >= allowed limit then game over
+      // Game over condition if too many misses
       if(missedCount >= maxMissedAllowed) {
         endGame();
         return;
@@ -305,7 +335,7 @@
         });
       });
       
-      // Collision detection: Enemy vs. Player
+      // Collision: Enemy vs. Player
       for(let enemy of enemies) {
         if(rectIntersect(enemy, player)) {
           endGame();
@@ -333,11 +363,10 @@
         ctx.fillRect(enemy.x, enemy.y, enemy.width, enemy.height);
       });
       
-      // Draw Score
+      // Draw Score and Missed Count
       ctx.fillStyle = "#fff";
       ctx.font = "20px Arial";
       ctx.fillText("Score: " + Math.floor(score), 10, 25);
-      // Optionally show missed count (for debugging)
       ctx.fillText("Missed: " + missedCount, 10, 50);
     }
     
