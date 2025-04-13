@@ -6,6 +6,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Dodge & Fire</title>
   <style>
+    :root {
+      /* Safe area inset support for iOS devices */
+      --safe-area-bottom: env(safe-area-inset-bottom);
+    }
     body {
       margin: 0;
       padding: 0;
@@ -14,18 +18,25 @@
       font-family: Arial, sans-serif;
       overflow: hidden;
       touch-action: none; /* Disable pinch zoom */
+      /* Center the entire content on the screen */
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
     }
-    /* Container holds the canvas */
+    /* Container holds the canvas and centers it */
     #gameContainer {
       background-color: #333;
+      padding-bottom: var(--safe-area-bottom, 0);
+      display: flex;
+      justify-content: center;
+      align-items: center;
     }
-    /* Responsive canvas */
+    /* Responsive canvas: width never exceeds height */
     #gameCanvas {
-      width: 100vw;
-      height: 100vh;
       background-color: #333;
       display: block;
-      margin: 0 auto;
+      /* Canvas dimensions will be set via JavaScript */
     }
     .screen {
       position: absolute;
@@ -93,10 +104,16 @@
     const canvas = document.getElementById("gameCanvas");
     const ctx = canvas.getContext("2d");
 
-    // Responsive canvas: full window dimensions
+    // Responsive canvas: adjust dimensions so width is never greater than height (considering safe area)
     function resizeCanvas() {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
+      const computedStyle = getComputedStyle(document.documentElement);
+      const safeAreaBottom = parseInt(computedStyle.getPropertyValue('--safe-area-bottom')) || 0;
+      const availableHeight = window.innerHeight - safeAreaBottom;
+      const availableWidth = window.innerWidth;
+      // Set canvas width to the minimum of availableWidth and availableHeight
+      const desiredWidth = Math.min(availableWidth, availableHeight);
+      canvas.width = desiredWidth;
+      canvas.height = availableHeight;
     }
     resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
@@ -152,22 +169,18 @@
     });
 
     // Multi-touch support for mobile:
-    // movementTouchId stores the touch id designated for moving the player.
     let movementTouchId = null;
-    // touchData stores details for each touch (start time, startX, lastX, moved flag)
     const touchData = {};
 
     canvas.addEventListener("touchstart", (e) => {
       if(gameState !== "playing") return;
       for (let touch of e.changedTouches) {
-        // Record initial touch data for each touch
         touchData[touch.identifier] = {
           startX: touch.clientX,
           lastX: touch.clientX,
           startTime: new Date().getTime(),
           moved: false
         };
-        // If no movement touch is set, designate the first touch as movement
         if(movementTouchId === null) {
           movementTouchId = touch.identifier;
         }
@@ -180,15 +193,12 @@
         const data = touchData[touch.identifier];
         if(!data) continue;
         const deltaX = touch.clientX - data.lastX;
-        // Mark this touch as having moved if deltaX is significant
         if(Math.abs(deltaX) > 2) {
           data.moved = true;
         }
         data.lastX = touch.clientX;
-        // Only update player position for the designated movement touch
         if(touch.identifier === movementTouchId) {
           player.x += deltaX;
-          // Boundary checks
           if(player.x < 0) player.x = 0;
           if(player.x > canvas.width - player.width) player.x = canvas.width - player.width;
         }
@@ -201,17 +211,13 @@
         const data = touchData[touch.identifier];
         if(!data) continue;
         const touchDuration = new Date().getTime() - data.startTime;
-        // If the touch wasn't used for movement (or minimal movement) and was short, fire bullet
         if(!data.moved && touchDuration < 200) {
           fireBullet();
         }
-        // If the ended touch was the movement touch, assign a new one if available
         if(touch.identifier === movementTouchId) {
           movementTouchId = null;
-          // Try to assign any active touch as movement
           const remainingTouches = Object.keys(touchData);
           if(remainingTouches.length > 1) {
-            // Assign the first one that is not the one that just ended
             for (let id of remainingTouches) {
               if(parseInt(id) !== touch.identifier) {
                 movementTouchId = parseInt(id);
@@ -220,12 +226,10 @@
             }
           }
         }
-        // Remove the touch data of the ended touch
         delete touchData[touch.identifier];
       }
     });
     
-    // Mouse click for desktop firing
     canvas.addEventListener("click", () => {
       if(gameState === "playing") {
         fireBullet();
@@ -243,7 +247,6 @@
       menuScreen.classList.remove("hidden");
     });
     restartBtn.addEventListener("click", () => {
-      // Reset persistent key states before restarting
       for (let k in keys) { keys[k] = false; }
       startGame();
     });
@@ -254,9 +257,10 @@
     
     // Initialize game objects
     function initGame() {
+      // Adjust player.y to be above the safe area and virtual buttons.
       player = {
         x: canvas.width / 2 - playerWidth / 2,
-        y: canvas.height - playerHeight - 10,
+        y: canvas.height - playerHeight - 40, // Increased margin to avoid virtual buttons
         width: playerWidth,
         height: playerHeight,
       };
@@ -290,7 +294,6 @@
     function update(deltaTime) {
       score += deltaTime * 0.01;
       
-      // Desktop keyboard movement
       if(keys["ArrowLeft"] && player.x > 0) {
         player.x -= playerSpeed;
       }
@@ -298,13 +301,11 @@
         player.x += playerSpeed;
       }
       
-      // Update bullets
       bullets = bullets.filter(bullet => {
         bullet.y -= bulletSpeed;
         return bullet.y + bullet.height > 0;
       });
       
-      // Update enemies; count misses if they pass the bottom
       enemies = enemies.filter(enemy => {
         enemy.y += enemy.speed;
         if(enemy.y > canvas.height) {
@@ -314,18 +315,15 @@
         return true;
       });
       
-      // Gradually increase enemy speed (up to max)
       if(baseEnemySpeed < maxEnemySpeed) {
         baseEnemySpeed += enemySpeedIncrement;
       }
       
-      // Game over condition if too many misses
       if(missedCount >= maxMissedAllowed) {
         endGame();
         return;
       }
       
-      // Collision detection: Bullets vs. Enemies
       bullets.forEach((bullet, bi) => {
         enemies.forEach((enemy, ei) => {
           if(rectIntersect(bullet, enemy)) {
@@ -335,7 +333,6 @@
         });
       });
       
-      // Collision: Enemy vs. Player
       for(let enemy of enemies) {
         if(rectIntersect(enemy, player)) {
           endGame();
@@ -347,23 +344,19 @@
     function draw() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       
-      // Draw player
       ctx.fillStyle = "#0f0";
       ctx.fillRect(player.x, player.y, player.width, player.height);
       
-      // Draw bullets
       ctx.fillStyle = "#ff0";
       bullets.forEach(bullet => {
         ctx.fillRect(bullet.x, bullet.y, bullet.width, bullet.height);
       });
       
-      // Draw enemies
       ctx.fillStyle = "#f00";
       enemies.forEach(enemy => {
         ctx.fillRect(enemy.x, enemy.y, enemy.width, enemy.height);
       });
       
-      // Draw Score and Missed Count
       ctx.fillStyle = "#fff";
       ctx.font = "20px Arial";
       ctx.fillText("Score: " + Math.floor(score), 10, 25);
