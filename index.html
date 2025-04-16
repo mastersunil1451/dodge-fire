@@ -66,9 +66,55 @@
       margin-bottom: 20px;
       font-size: 4vw;
     }
+    #ad-overlay {
+      height: 290px;
+      width: 300px;
+      position: absolute;
+      background-color: white;
+      margin: auto;
+      display: none;
+      z-index: 99;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      overflow: hidden;
+
+      #close-start-btn {
+        position: absolute;
+        right: -2px;
+        top: -3px;
+        padding: 0;
+        margin: 0;
+        width: 30px;
+      }
+
+      p {
+        color: #000000;
+        font-size: 13px;
+        position: absolute;
+        bottom: -16px;
+        left: 0;
+        padding: 5px;
+      }
+    }
   </style>
 </head>
 <body>
+  <div id="ad-overlay">
+    <button id="close-start-btn">x</button>
+    <p>Visiting this small ad helps us to grow and update. Thanks for your support! 💖</p>
+    <!-- Adsterra Ads Code -->
+  <script type="text/javascript">
+    atOptions = {
+      'key' : '15cd165eb5c6f2b40807bacca76d739c',
+      'format' : 'iframe',
+      'height' : 250,
+      'width' : 300,
+      'params' : {}
+    };
+  </script>
+  <script type="text/javascript" src="//www.highperformanceformat.com/15cd165eb5c6f2b40807bacca76d739c/invoke.js"></script>
+  </div>
   <!-- Menu Screen -->
   <div id="menuScreen" class="screen">
     <h1 style="font-size: 6vw;">Dodge & Fire</h1>
@@ -130,6 +176,8 @@
     const backBtn = document.getElementById("backBtn");
     const restartBtn = document.getElementById("restartBtn");
     const backMenuBtn = document.getElementById("backMenuBtn");
+    const adOverlay = document.getElementById('ad-overlay');
+    const closeBtn = document.getElementById('close-start-btn');
 
     // Game Variables
     let gameState = "menu"; // menu, playing, gameover
@@ -246,9 +294,13 @@
       howToPlayScreen.classList.add("hidden");
       menuScreen.classList.remove("hidden");
     });
-    restartBtn.addEventListener("click", () => {
+    closeBtn.addEventListener("click", () => {
       for (let k in keys) { keys[k] = false; }
       startGame();
+      adOverlay.style.display = 'none';
+    });
+    restartBtn.addEventListener('click', () => {
+      adOverlay.style.display = 'block';
     });
     backMenuBtn.addEventListener("click", () => {
       gameOverScreen.classList.add("hidden");
